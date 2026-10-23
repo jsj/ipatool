@@ -12,6 +12,7 @@ import (
 	"github.com/majd/ipatool/v2/internal/store/profile"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"howett.net/plist"
 )
 
 var _ = Describe("Generated Store profile", func() {
@@ -48,6 +49,37 @@ var _ = Describe("Generated Store profile", func() {
 })
 
 var _ = Describe("Generated profile response branches", func() {
+	It("preserves authentication dialog responses", func() {
+		ctx := context.Background()
+		bundle, err := assets.Load(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		prepared, err := profile.Load(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		guest, err := open(ctx, bundle.AppleMediaServices, prepared, true)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(guest.Close)
+		body := `<?xml version="1.0"?><plist version="1.0"><dict><key>m-allowed</key><false/><key>customerMessage</key><string>Verification required.</string><key>dialog</key><dict><key>title</key><string>Sign In</string><key>message</key><string>Verification required.</string></dict></dict></plist>`
+		response, err := guest.Execute(Request{
+			Operation: "authenticate", URL: "https://buy.itunes.apple.com/request", Method: http.MethodPost,
+			HardwareID: []byte{0, 1, 2, 3, 4, 5}, Headers: http.Header{},
+			Parameters: map[string]any{"appleId": "test@example.com", "password": "test"},
+			Sign:       func([]byte) ([]byte, error) { return []byte{1, 2, 3}, nil },
+			Bag:        map[string]any{"buyProduct": "https://buy.itunes.apple.com/request"},
+			Transport: func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/x-apple-plist"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+			},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(response.Body.Close)
+		data, err := io.ReadAll(response.Body)
+		Expect(err).NotTo(HaveOccurred())
+		var actual, expected map[string]any
+		_, err = plist.Unmarshal(data, &actual)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = plist.Unmarshal([]byte(body), &expected)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(actual).To(Equal(expected))
+	})
 	DescribeTable("preserves catalog, transfer, and finance responses", func(operation, method, contentType, body string, status int, stream bool) {
 		ctx := context.Background()
 		bundle, err := assets.Load(ctx)

@@ -25,6 +25,36 @@ func (r *Runtime) symbol(name string) {
 	}
 
 	switch name {
+	case "AMSError":
+		// AMSError(code, title, message, underlying) in the pinned 26A434
+		// framework delegates to AMSCustomError with the AMSErrorDomain.
+		code, title, message, underlying := r.arg(0), r.arg(1), r.arg(2), r.arg(3)
+		if r.String(title) == "" && r.String(message) == "" {
+			title = r.New("NSString", "An unknown error occurred. Please try again.")
+			message = 0
+		}
+		info := map[string]uint64{}
+		if title != 0 {
+			info["AMSDescription"] = title
+		}
+		if message != 0 {
+			info["AMSFailureReason"] = message
+		}
+		debug := title
+		if title != 0 && message != 0 {
+			debug = r.New("NSString", r.String(title)+" "+r.String(message))
+		} else if message != 0 {
+			debug = message
+		}
+		info["NSDebugDescription"] = debug
+		if underlying != 0 {
+			info["NSUnderlyingError"] = underlying
+		}
+		r.set(r.New("NSError", map[string]uint64{
+			"domain":   r.New("NSString", "AMSErrorDomain"),
+			"code":     r.New("NSNumber", int64(code)),
+			"userInfo": r.New("NSDictionary", info),
+		}))
 	case "CC_SHA512":
 		length := uint64(uint32(r.arg(1)))
 		if length > heapSize {
@@ -733,6 +763,18 @@ func (r *Runtime) message(receiver uint64, selector string, super bool) {
 	}
 	// Logging is a host service; it must not pull platform logging infrastructure into the guest.
 	if class == "AMSLogConfig" || (class == "AMSConcurrency" && selector == "logFaultFromSwiftConcurrencyOnInternalBuild") {
+		r.set(0)
+
+		return
+	}
+	// The host process owns request lifetime. Do not ask the guest's RunningBoard
+	// service to keep this isolated runtime alive while it handles a dialog.
+	if meta && class == "AMSKeepAlive" && selector == "keepAliveWithName:style:" {
+		r.set(r.New("HostKeepAlive", nil))
+
+		return
+	}
+	if class == "HostKeepAlive" && selector == "invalidate" {
 		r.set(0)
 
 		return
@@ -1931,6 +1973,9 @@ func (r *Runtime) formatAt(format string, sp uint64) string {
 		case '@':
 			if value == 0 {
 				result.WriteString("(null)")
+			} else if class := r.classNames[value]; class != "" {
+				// Objective-C class objects describe themselves by class name.
+				result.WriteString(class)
 			} else {
 				obj := r.objects[value]
 				if obj == nil {
