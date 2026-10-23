@@ -804,6 +804,13 @@ func (r *Runtime) performHTTP(task uint64) {
 		if len(data) > 32<<20 {
 			panic("Store API response exceeds size limit")
 		}
+		if r.authRequest {
+			if err = captureAuthResponse(data); err != nil {
+				r.transportError = err
+
+				panic("Store authentication diagnostic failed")
+			}
+		}
 
 		copied := *response
 		copied.Header = response.Header.Clone()

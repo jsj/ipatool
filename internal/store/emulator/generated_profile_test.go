@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -50,6 +52,9 @@ var _ = Describe("Generated Store profile", func() {
 
 var _ = Describe("Generated profile response branches", func() {
 	It("preserves authentication dialog responses", func() {
+		directory := GinkgoT().TempDir()
+		Expect(os.Chmod(directory, 0o700)).To(Succeed())
+		GinkgoT().Setenv("IPATOOL_AUTH_RESPONSE_DIR", directory)
 		ctx := context.Background()
 		bundle, err := assets.Load(ctx)
 		Expect(err).NotTo(HaveOccurred())
@@ -79,6 +84,15 @@ var _ = Describe("Generated profile response branches", func() {
 		_, err = plist.Unmarshal([]byte(body), &expected)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(actual).To(Equal(expected))
+		files, err := filepath.Glob(filepath.Join(directory, "*.body"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(files).To(HaveLen(1))
+		captured, err := os.ReadFile(files[0])
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(captured)).To(Equal(body))
+		info, err := os.Stat(files[0])
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o600)))
 	})
 	DescribeTable("preserves catalog, transfer, and finance responses", func(operation, method, contentType, body string, status int, stream bool) {
 		ctx := context.Background()

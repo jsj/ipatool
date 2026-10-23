@@ -85,6 +85,15 @@ Run `ipatool auth login` in a terminal, then configure your MCP client to launch
 
 ## Compiling
 
+### Authentication diagnostics
+
+Set `IPATOOL_AUTH_RESPONSE_DIR` to a private directory when diagnosing an Apple
+sign-in failure. The tool saves each server response body before framework
+decoding. Bodies may be compressed and may contain account secrets or recovery
+links. The directory must have owner-only permissions; output files use mode
+`0600`. Request credentials and response headers are not captured. Capture is
+disabled unless the variable is set. Keep these files out of Git and issue reports.
+
 The tool can be compiled using the Go toolchain.
 
 ```shell
